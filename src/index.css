@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .wrapper {
+    @apply w-10/12;
+  }
+}
+
+@font-face {
+  font-family: "Nino Mtavruli";
+  src: url("../public/fonts/bpg_extrasquare_mtavruli_2009.ttf");
+}
+
+*{
+  font-family: 'Nino Mtavruli', sans-serif;
+}
