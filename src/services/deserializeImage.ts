@@ -1,11 +1,12 @@
 import Image from "../models/Image";
 
+
+//function to deserialize big api response into our Image Type
 function deserializeImage(image: any): Image {
   try {
-    // console.log("Image object:", image); // Log the image object to inspect its structure
     return {
       id: image["id"],
-      description: image["description"] || "", // Handle optional description property
+      description: image["description"] || "", 
       likes: image["likes"],
       downloadUrl: image["links"]["download_location"] || image.downloadUrl,
       url: {

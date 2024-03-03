@@ -5,6 +5,9 @@ import Image from "../../models/Image";
 import Spinner from "../../Components/Spinner/Spinner";
 import deserializeImage from "../../services/deserializeImage";
 
+import { Bounce, ToastContainer, toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+
 const { v4: uuidv4 } = require("uuid");
 
 function HomeScreen() {
@@ -16,67 +19,109 @@ function HomeScreen() {
     null
   );
 
+  //Get Cache if it exists and also, populate images with the 20 most popular images
   useEffect(() => {
     const storedSearches = localStorage.getItem("searchCache");
     if (storedSearches) {
-      // Get the list of recent searches from the searchCache object
       const searchCache = JSON.parse(storedSearches);
       const lastSearches = Object.keys(searchCache).reverse().slice(0, 20);
-      setImages(searchCache[lastSearches[0]]); // Set images to the latest search results
     }
-  }, []);
 
-  useEffect(() => {
     const fetchImages = async () => {
       try {
         setIsLoading(true);
         const response = await createAPIEndpoint(ENDPOINTS.photos, {
           order_by: "popular",
           per_page: 20,
-          page: index, // Use current index
+          page: index,
           client_id: process.env.REACT_APP_ACCESS_KEY,
         }).get();
-        console.log(response.data);
+
         const deserializedImages = response.data.map((image: any) =>
           deserializeImage(image)
         );
+
         setImages((prevImages) => [...prevImages, ...deserializedImages]);
+        setIndex((prevIndex) => prevIndex + 1);
       } catch (err) {
-        console.error(err);
+        if (err instanceof Error) {
+          const errorMessage = err.message;
+          toast.error(errorMessage);
+          console.error(err);
+        } else {
+          const errorMessage = String(err);
+          toast.error(errorMessage);
+          console.error(errorMessage);
+        }
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchImages();
-  }, [index]);
+  }, []);
 
+  //If the searchString is not "", then add 20 of more images with query to infinite scroll
+  //else, just add 20 populars
   const fetchData = useCallback(async () => {
     if (isLoading) return;
 
     setIsLoading(true);
 
     try {
-      const response = await createAPIEndpoint(ENDPOINTS.photos, {
-        order_by: "popular",
-        per_page: 20,
-        page: index + 1, // Increment index to fetch next page
-        client_id: process.env.REACT_APP_ACCESS_KEY,
-      }).get();
-      if (response.status === 200) {
-        const deserializedImages = response.data.map((image: any) =>
-          deserializeImage(image)
-        );
-        setImages((prevImages) => [...prevImages, ...deserializedImages]);
-        setIndex((prevIndex) => prevIndex + 1); // Update index
+      if (searchString === "") {
+        if(images.length === 0){
+          return;
+        }
+        const response = await createAPIEndpoint(ENDPOINTS.photos, {
+          order_by: "popular",
+          per_page: 20,
+          page: index + 1,
+          client_id: process.env.REACT_APP_ACCESS_KEY,
+        }).get();
+        if (response.status === 200) {
+          const deserializedImages = response.data.map((image: any) =>
+            deserializeImage(image)
+          );
+          setImages((prevImages) => [...prevImages, ...deserializedImages]);
+          setIndex((prevIndex) => prevIndex + 1);
+        }
+      } else {
+        if(images.length === 0){
+          return;
+        }
+        const response = await createAPIEndpoint(ENDPOINTS.searchImage, {
+          query: searchString,
+          per_page: 20,
+          page: index + 1,
+          client_id: process.env.REACT_APP_ACCESS_KEY,
+        }).get();
+
+        if (response.status === 200) {
+          const deserializedImages = response.data.results.map((image: any) =>
+            deserializeImage(image)
+          );
+          setImages((prevImages) => [...prevImages, ...deserializedImages]);
+          setIndex((prevIndex) => prevIndex + 1);
+        }
       }
     } catch (err) {
+      if (err instanceof Error) {
+        const errorMessage = err.message;
+        toast.error(errorMessage);
+        console.error(err);
+      } else {
+        const errorMessage = String(err);
+        toast.error(errorMessage);
+        console.error(errorMessage);
+      }
       console.error(err);
     } finally {
       setIsLoading(false);
     }
   }, [index, isLoading]);
 
+  //Detect when it's time to fetch more data for infinite scroll
   useEffect(() => {
     const handleScroll = () => {
       const { scrollTop, clientHeight, scrollHeight } =
@@ -92,6 +137,10 @@ function HomeScreen() {
     };
   }, [fetchData]);
 
+  //Detect when the user has finished typing (there must be 500ms after the last keystroke)
+  //and searchPhotos only then. this helps with not having sub words in history.
+  //for example: if you want to search "Vashli", it woult search "V", "Va", "Vas", ... and so on.
+  //so it would pollute the search history and would send more unneccesary api calls
   const handleSearchChange = (value: string) => {
     setSearchString(value);
 
@@ -106,8 +155,9 @@ function HomeScreen() {
     setTypingTimeout(timeout);
   };
 
+  //Check if you have the according images in cache, and if not, send a request
   const searchPhotos = async (query: string) => {
-    if (query && query!=="") {
+    if (query && query !== "") {
       setIsLoading(true);
       try {
         const searchCache = JSON.parse(
@@ -118,53 +168,76 @@ function HomeScreen() {
           setImages(cachedResponse);
           setIsLoading(false);
           return;
-        }
+        } else {
+          const response = await createAPIEndpoint(ENDPOINTS.searchImage, {
+            query: query,
+            per_page: 20,
+            page: 1,
+            client_id: process.env.REACT_APP_ACCESS_KEY,
+          }).get();
 
-        const response = await createAPIEndpoint(ENDPOINTS.searchImage, {
-          query: query,
-          per_page: 20,
-          page: 1,
-          client_id: process.env.REACT_APP_ACCESS_KEY,
-        }).get();
+          if (response.status === 200) {
+            const deserializedImages = response.data.results.map((image: any) =>
+              deserializeImage(image)
+            );
 
-        if (response.status === 200) {
-          console.log(response.data.results);
-          const deserializedImages = response.data.results.map((image: any) =>
-            deserializeImage(image)
-          );
-          console.log(deserializedImages); // Ensure deserialized images are correct
-          searchCache[query] = deserializedImages; // Store deserialized images in searchCache
-          localStorage.setItem("searchCache", JSON.stringify(searchCache));
-          setImages(deserializedImages);
+            searchCache[query] = deserializedImages;
+
+            localStorage.setItem("searchCache", JSON.stringify(searchCache));
+            setImages(deserializedImages);
+          }
         }
       } catch (err) {
-        console.error(err);
+        if (err instanceof Error) {
+          const errorMessage = err.message;
+          toast.error(errorMessage);
+          console.error(err);
+        } else {
+          const errorMessage = String(err);
+          toast.error(errorMessage);
+          console.error(errorMessage);
+        }
       } finally {
         setIsLoading(false);
       }
     }
   };
 
-  console.log(images);
-
   return (
-    <div className="flex justify-center items-center">
-      <div className="wrapper">
-        <input
-          type="text"
-          placeholder="Search Images"
-          value={searchString}
-          onChange={(e) => handleSearchChange(e.target.value)}
-          className="w-full lg:w-4/6 h-12 rounded-xl p-4 my-4 border-background-gray border-solid border-2 focus:border-main-purple"
-        />
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {images.map((image) => {
-            return <ImageItem key={uuidv4()} image={image} />;
-          })}
+    <>
+      <div className="flex justify-center items-center">
+        <div className="wrapper">
+          {/* Show the Search Bar */}
+          <input
+            type="text"
+            placeholder="მოძებნეთ სურათები"
+            value={searchString}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            className="w-full lg:w-4/6 h-12 rounded-xl p-4 my-4 border-background-gray border-solid border-2 focus:border-main-purple"
+          />
+
+          {/* Map Out the images if they have been loaded */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {images.map((image) => {
+              return <ImageItem key={uuidv4()} image={image} />;
+            })}
+          </div>
+
+          {/* If Search result is empty show aseti veraferi moidzebna */}
+          {images.length === 0 && !isLoading && (
+            <h1 className="text-2xl font-bold text-main-red">
+              ასეთი ვერაფერი მოიძებნა!
+            </h1>
+          )}
+
+          {/* If loading, show loading component */}
+          {isLoading && <Spinner />}
         </div>
-        {isLoading && <Spinner />}
       </div>
-    </div>
+
+      {/* {"Placeholder for toast to show errors."} */}
+      <ToastContainer />
+    </>
   );
 }
 
